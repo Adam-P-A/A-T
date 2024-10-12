@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot z AI</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <button id="saveBtn">Zapisz Progres</button>
+    <button id="loadBtn">Wczytaj Progres</button>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // Właściwości robota
+        const robot = {
+            x: 100,
+            y: 250,
+            width: 30,
+            height: 30,
+            leg: {
+                segments: [
+                    { length: 50, angle: 0 },
+                    { length: 30, angle: 0 }
+                ],
+                position: { x: 0, y: 0 }
+            },
+            velocityY: 0,
+            gravity: 0.5,
+            grounded: true,
+            learningRate: 0.1,
+            actions: [],
+            rewards: [],
+            totalReward: 0,
+            goalReached: false,
+            energy: 100 // Nowa właściwość energii
+        };
+
+        const goal = {
+            x: 750,
+            y: 230,
+            size: 30
+        };
+
+        // Ustawienie przycisków
+        document.getElementById("saveBtn").onclick = saveProgress;
+        document.getElementById("loadBtn").onclick = loadProgress;
+
+        function update() {
+            // Grawitacja i kolizja z podłogą
+            if (robot.y + robot.height < canvas.height - 20) {
+                robot.velocityY += robot.gravity;
+                robot.y += robot.velocityY;
+                robot.grounded = false;
+            } else {
+                robot.y = canvas.height - 20 - robot.height;
+                robot.velocityY = 0;
+                robot.grounded = true;
+            }
+
+            // AI do ruchu nogi
+            if (robot.grounded && robot.energy > 0) {
+                // Ruch robota do przodu
+                robot.x += 1;
+
+                // Uczenie się kątów nogi
+                learnLegAngles();
+
+                // Sprawdzenie, czy osiągnięto cel
+                if (robot.x + robot.width >= goal.x && robot.y + robot.height >= goal.y) {
+                    robot.goalReached = true;
+                    alert("Cel osiągnięty!");
+                    resetSimulation();
+                }
+            }
+
+            // Rysowanie
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawFloor();
+            drawRobot();
+            drawGoal();
+
+            requestAnimationFrame(update);
+        }
+
+        function drawFloor() {
+            ctx.fillStyle = "#8B4513"; // Kolor podłogi
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+        }
+
+        function drawRobot() {
+            ctx.fillStyle = "blue";
+            ctx.fillRect(robot.x, robot.y, robot.width, robot.height);
+
+            // Rysowanie nogi robota
+            ctx.save();
+            ctx.translate(robot.x + robot.width / 2, robot.y + robot.height);
+            ctx.rotate(robot.leg.segments[0].angle);
+            ctx.fillStyle = "green";
+            ctx.fillRect(-5, 0, 10, robot.leg.segments[0].length);
+            ctx.rotate(robot.leg.segments[1].angle);
+            ctx.fillRect(-5, robot.leg.segments[0].length, 10, robot.leg.segments[1].length);
+            ctx.restore();
+        }
+
+        function drawGoal() {
+            ctx.fillStyle = "red";
+            ctx.fillRect(goal.x, goal.y, goal.size, goal.size);
+        }
+
+        function learnLegAngles() {
+            // Ustalanie akcji i nagród
+            const previousX = robot.x;
+            const previousY = robot.y;
+
+            // Uczenie przez wzmacnianie
+            const success = (robot.x >= previousX + 1) ? 1 : 0; // Prosta logika sukcesu
+            const reward = success > 0 ? 1 : -1; // Nagroda za sukces, kara za porażkę
+
+            // Dodawanie nagród i akcji do historii
+            robot.actions.push({ x: robot.x, angle: robot.leg.segments[0].angle });
+            robot.rewards.push(reward);
+            robot.totalReward += reward;
+
+            // Uczenie się na podstawie nagród
+            if (reward > 0) {
+                robot.leg.segments[0].angle += robot.learningRate; // Zwiększ kąt, gdy sukces
+            } else {
+                robot.leg.segments[0].angle -= robot.learningRate; // Zmniejsz kąt, gdy porażka
+            }
+
+            // Ograniczenie kąta
+            robot.leg.segments[0].angle = Math.max(-Math.PI / 4, Math.min(robot.leg.segments[0].angle, Math.PI / 4));
+            robot.energy -= 0.1; // Zmniejsz energię przy każdym ruchu
+        }
+
+        function saveProgress() {
+            const progress = {
+                robotX: robot.x,
+                robotY: robot.y,
+                velocityY: robot.velocityY,
+                grounded: robot.grounded,
+                legAngle: robot.leg.segments[0].angle,
+                actions: robot.actions,
+                rewards: robot.rewards,
+                totalReward: robot.totalReward,
+                goalReached: robot.goalReached,
+                energy: robot.energy // Zapis energii
+            };
+            localStorage.setItem("robotProgress", JSON.stringify(progress));
+            alert("Progres zapisany!");
+        }
+
+        function loadProgress() {
+            const savedProgress = localStorage.getItem("robotProgress");
+            if (savedProgress) {
+                const progress = JSON.parse(savedProgress);
+                robot.x = progress.robotX;
+                robot.y = progress.robotY;
+                robot.velocityY = progress.velocityY;
+                robot.grounded = progress.grounded;
+                robot.leg.segments[0].angle = progress.legAngle; // Przywrócenie kąta nogi
+                robot.actions = progress.actions || []; // Przywrócenie działań
+                robot.rewards = progress.rewards || []; // Przywrócenie nagród
+                robot.totalReward = progress.totalReward || 0; // Przywrócenie całkowitej nagrody
+                robot.goalReached = progress.goalReached; // Przywrócenie statusu celu
+                robot.energy = progress.energy || 100; // Przywrócenie energii
+                alert("Progres wczytany!");
+            } else {
+                alert("Brak zapisanego progresu!");
+            }
+        }
+
+        function resetSimulation() {
+            robot.x = 100;
+            robot.y = 250;
+            robot.velocityY = 0;
+            robot.grounded = true;
+            robot.goalReached = false;
+            robot.leg.segments[0].angle = 0; // Reset kąta nogi
+            robot.actions = []; // Reset historii działań
+            robot.rewards = []; // Reset historii nagród
+            robot.totalReward = 0; // Reset całkowitej nagrody
+            robot.energy = 100; // Reset energii
+        }
+
+        update();
+    </script>
+</body>
+</html>
